@@ -1,0 +1,130 @@
+#!/bin/bash
+# infra-push - Deploy encrypted secrets from vault to VPS
+# Usage: infra-push <project-name> [--no-restart]
+# Example: infra-push infrastructure
+
+set -e
+
+PROJECT_NAME="$1"
+NO_RESTART="$2"
+VPS="root@188.245.183.171"
+VAULT_BASE="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/rhncrs-collab"
+LOG_DIR="$VAULT_BASE/9_System/Logs/Daily_Notes"
+LOG_FILE="$LOG_DIR/$(date +%Y-%m-%d).md"
+
+if [ -z "$PROJECT_NAME" ]; then
+    echo "Usage: infra-push <project-name> [--no-restart]"
+    echo ""
+    echo "Example:"
+    echo "  infra-push infrastructure"
+    echo "  infra-push rhinocrash --no-restart"
+    echo ""
+    echo "Available secrets:"
+    vault-secrets list 2>/dev/null | grep -E '\.env\.enc' | sed 's/.env.enc.*//' | sed 's/^/  - /'
+    exit 1
+fi
+
+echo "🚀 Deploying $PROJECT_NAME secrets to rhncrs.com VPS..."
+echo ""
+
+# Test SSH connection
+if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$VPS" "echo 'SSH OK'" 2>/dev/null; then
+    echo "❌ SSH connection failed"
+    echo ""
+    echo "Configure SSH access first:"
+    echo "  ssh-copy-id $VPS"
+    exit 1
+fi
+
+# Decrypt to temp file
+echo "🔓 Decrypting secrets..."
+TEMP_ENV="/tmp/deploy-${PROJECT_NAME}-$$.env"
+if ! decrypt-env "$PROJECT_NAME" "$TEMP_ENV" 2>/dev/null; then
+    echo "❌ Failed to decrypt $PROJECT_NAME"
+    echo "Use 'vault-secrets list' to see available secrets"
+    exit 1
+fi
+
+# Determine deployment path
+DEPLOY_PATH="/root/$PROJECT_NAME/.env"
+
+# Check if project directory exists on VPS
+echo "📂 Checking VPS directory..."
+if ! ssh "$VPS" "test -d /root/$PROJECT_NAME" 2>/dev/null; then
+    echo "⚠️  Directory /root/$PROJECT_NAME doesn't exist on VPS"
+    read -p "Create it? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        ssh "$VPS" "mkdir -p /root/$PROJECT_NAME"
+        echo "✅ Created /root/$PROJECT_NAME"
+    else
+        rm -f "$TEMP_ENV"
+        echo "Deployment cancelled"
+        exit 1
+    fi
+fi
+
+# Backup existing .env on VPS
+echo "💾 Backing up existing .env..."
+ssh "$VPS" "if [ -f $DEPLOY_PATH ]; then cp $DEPLOY_PATH ${DEPLOY_PATH}.backup.$(date +%Y%m%d-%H%M%S); fi" 2>/dev/null || true
+
+# Deploy
+echo "📤 Uploading to VPS..."
+scp -q "$TEMP_ENV" "$VPS:$DEPLOY_PATH"
+rm -f "$TEMP_ENV"
+
+echo "✅ Deployed to $VPS:$DEPLOY_PATH"
+
+# Restart service
+if [ "$NO_RESTART" != "--no-restart" ]; then
+    echo ""
+    read -p "Restart service/containers? (Y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        echo "🔄 Restarting services..."
+
+        # Try docker-compose restart
+        if ssh "$VPS" "cd /root/$PROJECT_NAME && command -v docker-compose &> /dev/null" 2>/dev/null; then
+            ssh "$VPS" "cd /root/$PROJECT_NAME && docker-compose restart" 2>/dev/null && \
+            echo "✅ Docker containers restarted" || \
+            echo "⚠️  Docker restart failed"
+        else
+            # Try systemd restart
+            if ssh "$VPS" "systemctl is-active --quiet $PROJECT_NAME" 2>/dev/null; then
+                ssh "$VPS" "systemctl restart $PROJECT_NAME" && \
+                echo "✅ Service $PROJECT_NAME restarted" || \
+                echo "⚠️  Service restart failed"
+            else
+                echo "ℹ️  No automatic restart available"
+                echo "   Manually restart services if needed"
+            fi
+        fi
+    fi
+fi
+
+# Log deployment
+mkdir -p "$LOG_DIR"
+if [ ! -f "$LOG_FILE" ]; then
+    echo "# Daily Log - $(date '+%Y-%m-%d')" > "$LOG_FILE"
+    echo "" >> "$LOG_FILE"
+fi
+
+cat >> "$LOG_FILE" << EOF
+
+## Deployment - $(date '+%H:%M')
+
+🚀 Deployed **$PROJECT_NAME** secrets to VPS
+- Target: rhncrs.com ($VPS)
+- Path: $DEPLOY_PATH
+- Status: Success
+
+EOF
+
+echo ""
+echo "✅ Deployment complete!"
+echo "📝 Logged to: $LOG_FILE"
+
+# Notification
+if command -v osascript &> /dev/null; then
+    osascript -e "display notification \"$PROJECT_NAME deployed to VPS\" with title \"rhncrs.com\" sound name \"Glass\"" 2>/dev/null || true
+fi

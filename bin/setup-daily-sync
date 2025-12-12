@@ -1,0 +1,43 @@
+#!/bin/bash
+# setup-daily-sync - Install launchd agent for daily infrastructure sync
+# Usage: setup-daily-sync
+
+set -e
+
+PLIST_SOURCE="$HOME/Dev/ai-collaboration-framework/lib/com.rhncrs.infra-sync.plist"
+PLIST_DEST="$HOME/Library/LaunchAgents/com.rhncrs.infra-sync.plist"
+
+echo "📅 Setting up daily infrastructure sync..."
+echo ""
+
+# Check if infra-pull exists
+if [ ! -f "$HOME/.local/bin/infra-pull" ]; then
+    echo "❌ Error: infra-pull not found in PATH"
+    echo "Run ./install.sh first to install framework tools"
+    exit 1
+fi
+
+# Copy plist
+echo "📋 Installing LaunchAgent..."
+cp "$PLIST_SOURCE" "$PLIST_DEST"
+echo "   ✅ Copied to: $PLIST_DEST"
+
+# Load the agent
+echo "🚀 Loading LaunchAgent..."
+launchctl unload "$PLIST_DEST" 2>/dev/null || true
+launchctl load "$PLIST_DEST"
+echo "   ✅ Loaded successfully"
+
+echo ""
+echo "✅ Daily sync configured!"
+echo ""
+echo "📊 Schedule: Every day at 9:00 AM"
+echo "📝 Logs: /tmp/infra-sync.log"
+echo ""
+echo "Commands:"
+echo "  launchctl list | grep rhncrs           # Check status"
+echo "  tail -f /tmp/infra-sync.log            # View logs"
+echo "  launchctl unload $PLIST_DEST  # Disable"
+echo "  infra-pull                             # Run manually now"
+echo ""
+echo "💡 Tip: Run 'infra-pull' once now to test the setup!"

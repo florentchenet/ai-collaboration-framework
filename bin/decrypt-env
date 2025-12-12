@@ -1,0 +1,67 @@
+#!/bin/bash
+# decrypt-env - Decrypt .env file from Obsidian vault
+# Usage: decrypt-env <project-name> [output-path]
+# Examples:
+#   decrypt-env infrastructure                    # Prints to stdout
+#   decrypt-env infrastructure /tmp/.env          # Writes to file
+#   decrypt-env infrastructure > .env             # Redirect to file
+
+set -e
+
+PROJECT_NAME="$1"
+OUTPUT="${2:--}"  # Default to stdout (-)
+VAULT_SECRETS="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/rhncrs-collab/9_System/Secrets"
+SSH_KEY="$HOME/.ssh/id_ed25519"
+
+# Fallback to RSA if Ed25519 doesn't exist
+if [ ! -f "$SSH_KEY" ]; then
+    SSH_KEY="$HOME/.ssh/id_rsa"
+fi
+
+# Validate input
+if [ -z "$PROJECT_NAME" ]; then
+    echo "Usage: decrypt-env <project-name> [output-path]" >&2
+    echo "" >&2
+    echo "Examples:" >&2
+    echo "  decrypt-env infrastructure                # Print to stdout" >&2
+    echo "  decrypt-env infrastructure /tmp/.env      # Write to file" >&2
+    echo "  decrypt-env infrastructure > .env         # Redirect" >&2
+    echo "" >&2
+    echo "Available secrets:" >&2
+    if [ -d "$VAULT_SECRETS" ]; then
+        ls -1 "$VAULT_SECRETS"/*.env.enc 2>/dev/null | xargs -n1 basename | sed 's/.env.enc$//' | sed 's/^/  - /' >&2
+    fi
+    exit 1
+fi
+
+# Try SSH key decryption first (silent for automation)
+SSH_ENC_FILE="$VAULT_SECRETS/${PROJECT_NAME}.env.enc"
+PASS_ENC_FILE="$VAULT_SECRETS/${PROJECT_NAME}.env.password.enc"
+
+if [ -f "$SSH_ENC_FILE" ] && [ -f "$SSH_KEY" ]; then
+    # Try SSH key (redirect stderr to suppress errors for automation)
+    if age -d -i "$SSH_KEY" "$SSH_ENC_FILE" 2>/dev/null > "$OUTPUT"; then
+        # Success - exit silently for automation
+        exit 0
+    fi
+fi
+
+# Fallback to password encryption
+if [ -f "$PASS_ENC_FILE" ]; then
+    # Only show message if outputting to terminal
+    if [ "$OUTPUT" = "-" ]; then
+        echo "🔑 SSH key unavailable, using password decryption..." >&2
+    fi
+    age -d "$PASS_ENC_FILE" > "$OUTPUT"
+    exit 0
+fi
+
+# No encrypted file found
+echo "❌ Error: No encrypted file found for project: $PROJECT_NAME" >&2
+echo "" >&2
+echo "Looking for:" >&2
+echo "  - $SSH_ENC_FILE" >&2
+echo "  - $PASS_ENC_FILE" >&2
+echo "" >&2
+echo "Use 'encrypt-env $PROJECT_NAME /path/to/.env' to encrypt first." >&2
+exit 1
