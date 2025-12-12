@@ -1,0 +1,66 @@
+#!/bin/bash
+# route-message - Router for user addressing system
+# Routes messages to @Gemini, @Claude, or both based on tags in the prompt
+# Design by Gemini, Implementation by Claude
+
+set -e
+
+PROMPT="$*"
+
+if [ -z "$PROMPT" ] && [ ! -t 0 ]; then
+    # Read from stdin if no arguments and stdin is available
+    PROMPT=$(cat)
+fi
+
+if [ -z "$PROMPT" ]; then
+    echo "Usage: route-message <prompt with @mentions>"
+    echo ""
+    echo "Examples:"
+    echo "  route-message \"@Gemini list all files\""
+    echo "  route-message \"What do you think? @Claude\""
+    echo "  route-message \"@Gemini and @Claude collaborate on this\""
+    echo ""
+    exit 1
+fi
+
+# Normalize for case-insensitive search
+SEARCH_TEXT=$(echo "$PROMPT" | tr '[:upper:]' '[:lower:]')
+
+# Detect addressing tags (@ or # followed by name)
+HAS_GEMINI=false
+HAS_CLAUDE=false
+
+if echo "$SEARCH_TEXT" | grep -qE '(^|[[:space:]])[@#]gemini\b'; then
+    HAS_GEMINI=true
+fi
+
+if echo "$SEARCH_TEXT" | grep -qE '(^|[[:space:]])[@#]claude\b'; then
+    HAS_CLAUDE=true
+fi
+
+# Determine routing
+if [ "$HAS_GEMINI" = true ] && [ "$HAS_CLAUDE" = true ]; then
+    RECIPIENTS=("Gemini" "Claude")
+    ROUTE_MODE="both"
+elif [ "$HAS_GEMINI" = true ]; then
+    RECIPIENTS=("Gemini")
+    ROUTE_MODE="gemini"
+elif [ "$HAS_CLAUDE" = true ]; then
+    RECIPIENTS=("Claude")
+    ROUTE_MODE="claude"
+else
+    # Default: route to both if no specific addressing
+    RECIPIENTS=("Gemini" "Claude")
+    ROUTE_MODE="default"
+fi
+
+# Output routing information (machine-readable JSON)
+cat << EOF
+{
+  "recipients": [$(printf '"%s",' "${RECIPIENTS[@]}" | sed 's/,$//')],
+  "route_mode": "$ROUTE_MODE",
+  "original_prompt": $(echo "$PROMPT" | jq -Rs .),
+  "detected_gemini": $HAS_GEMINI,
+  "detected_claude": $HAS_CLAUDE
+}
+EOF

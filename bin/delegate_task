@@ -45,31 +45,38 @@ TASK_FILE="$HANDOFFS_DIR/${DATE}_Task_${TASK_ID}.md"
 mkdir -p "$HANDOFFS_DIR" "$TASKS_DIR"
 
 # Create task handoff file
-cat > "$TASK_FILE" << EOFTASK
+cat > "$TASK_FILE" << 'EOFTASK'
 ---
-task_id: $TASK_ID
-created: $TIMESTAMP
+task_id: TASK_ID_PLACEHOLDER
+created: TIMESTAMP_PLACEHOLDER
 delegated_by: gemini
 assigned_to: claude
 status: pending
 priority: normal
 ---
 
-# Task Delegation: $TASK_DESC
+# Task Delegation: TASK_DESC_PLACEHOLDER
 
 ## Context
 
 **Delegated By:** Gemini (Obsidian Agent)
-**Reason for Delegation:** ${REASON:-Task requires Claude's capabilities}
-**Created:** $TIMESTAMP
+**Reason for Delegation:** REASON_PLACEHOLDER
+**Created:** TIMESTAMP_PLACEHOLDER
 
 ## Task Description
 
-$TASK_DESC
+TASK_DESC_PLACEHOLDER
 
 ## Context Files
 
 EOFTASK
+
+# Replace placeholders
+sed -i.bak "s/TASK_ID_PLACEHOLDER/$TASK_ID/" "$TASK_FILE"
+sed -i.bak "s/TIMESTAMP_PLACEHOLDER/$TIMESTAMP/g" "$TASK_FILE"
+sed -i.bak "s/TASK_DESC_PLACEHOLDER/$TASK_DESC/" "$TASK_FILE"
+sed -i.bak "s/REASON_PLACEHOLDER/${REASON:-Task requires Claude'\''s capabilities}/" "$TASK_FILE"
+rm -f "${TASK_FILE}.bak"
 
 # Add context files if provided
 if [ ${#CONTEXT_FILES[@]} -gt 0 ]; then
