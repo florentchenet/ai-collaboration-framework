@@ -1,0 +1,147 @@
+#!/bin/bash
+# delegate_task - Tool for Gemini to delegate tasks back to Claude
+# Usage: delegate_task <task_description> <context_files...> --reason <reason>
+
+set -e
+
+COLLAB_DIR="/Users/hoe/Dev/workspace/collab"
+HANDOFFS_DIR="$COLLAB_DIR/handoffs"
+TASKS_DIR="$COLLAB_DIR/tasks"
+STATUS_FILE="$COLLAB_DIR/status.json"
+
+# Parse arguments
+TASK_DESC=""
+CONTEXT_FILES=()
+REASON=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --reason)
+            REASON="$2"
+            shift 2
+            ;;
+        *)
+            if [ -z "$TASK_DESC" ]; then
+                TASK_DESC="$1"
+            else
+                CONTEXT_FILES+=("$1")
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$TASK_DESC" ]; then
+    echo "Usage: delegate_task <task_description> [context_files...] --reason <reason>"
+    exit 1
+fi
+
+# Create timestamp and task ID
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+DATE=$(date +"%Y-%m-%d")
+TASK_ID=$(date +"%Y%m%d_%H%M%S")
+TASK_FILE="$HANDOFFS_DIR/${DATE}_Task_${TASK_ID}.md"
+
+mkdir -p "$HANDOFFS_DIR" "$TASKS_DIR"
+
+# Create task handoff file
+cat > "$TASK_FILE" << EOFTASK
+---
+task_id: $TASK_ID
+created: $TIMESTAMP
+delegated_by: gemini
+assigned_to: claude
+status: pending
+priority: normal
+---
+
+# Task Delegation: $TASK_DESC
+
+## Context
+
+**Delegated By:** Gemini (Obsidian Agent)
+**Reason for Delegation:** ${REASON:-Task requires Claude's capabilities}
+**Created:** $TIMESTAMP
+
+## Task Description
+
+$TASK_DESC
+
+## Context Files
+
+EOFTASK
+
+# Add context files if provided
+if [ ${#CONTEXT_FILES[@]} -gt 0 ]; then
+    echo "" >> "$TASK_FILE"
+    for context_file in "${CONTEXT_FILES[@]}"; do
+        if [ -f "$context_file" ]; then
+            echo "### Context from: \`$context_file\`" >> "$TASK_FILE"
+            echo '```' >> "$TASK_FILE"
+            cat "$context_file" >> "$TASK_FILE"
+            echo '```' >> "$TASK_FILE"
+            echo "" >> "$TASK_FILE"
+        else
+            echo "- Referenced file: \`$context_file\` (not found)" >> "$TASK_FILE"
+        fi
+    done
+else
+    echo "No context files provided." >> "$TASK_FILE"
+fi
+
+# Add execution section
+cat >> "$TASK_FILE" << EOFEXEC
+
+## Execution Instructions
+
+Please complete this task and update this file with:
+
+1. **Approach:** Your planned approach
+2. **Results:** What was accomplished
+3. **Files Modified:** List of changed files
+4. **Next Steps:** Any follow-up actions needed
+
+Update the status in frontmatter to:
+- \`in_progress\` - When you start
+- \`completed\` - When finished
+- \`blocked\` - If you encounter issues
+
+## Response
+
+<!-- Claude: Add your response here -->
+
+EOFEXEC
+
+# Update status.json
+cat > "$STATUS_FILE" << EOFSTATUS
+{
+  "state": "CLAUDE_WORKING",
+  "updated": "$TIMESTAMP",
+  "current_task": "Process delegated task: $TASK_ID",
+  "context": "$TASK_FILE",
+  "delegated_by": "gemini"
+}
+EOFSTATUS
+
+# Create task tracking entry
+TASK_ENTRY="$TASKS_DIR/${TASK_ID}.json"
+cat > "$TASK_ENTRY" << EOFJSON
+{
+  "task_id": "$TASK_ID",
+  "created": "$TIMESTAMP",
+  "delegated_by": "gemini",
+  "assigned_to": "claude",
+  "status": "pending",
+  "description": "$TASK_DESC",
+  "reason": "${REASON:-Task requires Claude's capabilities}",
+  "handoff_file": "$TASK_FILE",
+  "context_files": [$(printf '"%s",' "${CONTEXT_FILES[@]}" | sed 's/,$//')]
+}
+EOFJSON
+
+echo "✓ Task delegated to Claude"
+echo "Task ID: $TASK_ID"
+echo "Handoff: $TASK_FILE"
+echo "Status: CLAUDE_WORKING"
+echo ""
+echo "Claude will process this task and respond in the handoff file."

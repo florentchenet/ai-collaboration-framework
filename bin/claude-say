@@ -1,0 +1,16 @@
+#!/bin/bash
+# claude-say - Formatted message output for Claude
+# Automatically adds Claude header with orange diamond emoji
+
+MESSAGE="$*"
+
+if [ -z "$MESSAGE" ]; then
+    # Read from stdin if no arguments
+    MESSAGE=$(cat)
+fi
+
+# Output with Claude header
+echo ""
+echo "### 🔶 Claude"
+echo "$MESSAGE"
+echo ""

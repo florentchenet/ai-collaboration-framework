@@ -1,0 +1,16 @@
+#!/bin/bash
+# gemini-say - Formatted message output for Gemini
+# Automatically adds Gemini header with blue diamond emoji
+
+MESSAGE="$*"
+
+if [ -z "$MESSAGE" ]; then
+    # Read from stdin if no arguments
+    MESSAGE=$(cat)
+fi
+
+# Output with Gemini header
+echo ""
+echo "### 🔷 Gemini"
+echo "$MESSAGE"
+echo ""

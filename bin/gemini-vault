@@ -1,0 +1,15 @@
+#!/bin/bash
+# gemini-vault - Simplified interface for Gemini to manage Obsidian vault
+# This wrapper gives Gemini direct access to vault operations
+
+VAULT_MANAGER="/Users/hoe/Dev/workspace/tools/obsidian-vault-manager.sh"
+VAULT_PATH="/Users/hoe/Library/Mobile Documents/iCloud~md~obsidian/Documents/rhncrs-collab"
+
+# Ensure vault manager exists
+if [ ! -f "$VAULT_MANAGER" ]; then
+    echo "Error: Vault manager not found at: $VAULT_MANAGER"
+    exit 1
+fi
+
+# Simple wrapper that passes all commands to the vault manager
+exec "$VAULT_MANAGER" "$@"

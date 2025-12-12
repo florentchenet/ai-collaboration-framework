@@ -1,0 +1,121 @@
+#!/bin/bash
+# respond_to_gemini - Tool for Claude to respond to Gemini messages/tasks
+# Usage: respond_to_gemini <message> [--task-id <id>] [--type <type>]
+
+set -e
+
+COLLAB_DIR="/Users/hoe/Dev/workspace/collab"
+DIALOGUES_DIR="$COLLAB_DIR/dialogues"
+RESPONSES_DIR="$COLLAB_DIR/responses"
+STATUS_FILE="$COLLAB_DIR/status.json"
+
+# Parse arguments
+MESSAGE=""
+TASK_ID=""
+TYPE="response"  # response, answer, completed
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --task-id)
+            TASK_ID="$2"
+            shift 2
+            ;;
+        --type)
+            TYPE="$2"
+            shift 2
+            ;;
+        *)
+            if [ -z "$MESSAGE" ]; then
+                MESSAGE="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$MESSAGE" ]; then
+    echo "Usage: respond_to_gemini <message> [--task-id <id>] [--type <type>]"
+    exit 1
+fi
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+mkdir -p "$RESPONSES_DIR"
+
+# Add to active thread with formatted header
+THREAD_FILE="$DIALOGUES_DIR/active_thread.md"
+if [ -f "$THREAD_FILE" ]; then
+    cat >> "$THREAD_FILE" << EOFMSG
+
+### 🔶 Claude
+
+**[$TIMESTAMP]** → Gemini | Type: $TYPE
+
+$MESSAGE
+
+---
+
+EOFMSG
+fi
+
+# If responding to a specific task, update the handoff file
+if [ -n "$TASK_ID" ]; then
+    HANDOFF_FILE=$(find "$COLLAB_DIR/handoffs" -name "*_${TASK_ID}.md" 2>/dev/null | head -1)
+
+    if [ -n "$HANDOFF_FILE" ] && [ -f "$HANDOFF_FILE" ]; then
+        # Update the handoff file with response
+        cat >> "$HANDOFF_FILE" << EOFRESPONSE
+
+---
+
+## Claude's Response
+
+**Timestamp:** $TIMESTAMP
+**Type:** $TYPE
+
+$MESSAGE
+
+EOFRESPONSE
+
+        # Update status in frontmatter if task completed
+        if [ "$TYPE" = "completed" ]; then
+            sed -i.bak 's/status: pending/status: completed/' "$HANDOFF_FILE"
+            sed -i.bak 's/status: in_progress/status: completed/' "$HANDOFF_FILE"
+            rm "${HANDOFF_FILE}.bak"
+        fi
+
+        echo "✓ Updated handoff: $HANDOFF_FILE"
+    fi
+fi
+
+# Create response file for Gemini to read
+RESPONSE_FILE="$RESPONSES_DIR/$(date +%Y%m%d_%H%M%S)_claude_response.md"
+cat > "$RESPONSE_FILE" << EOFRESPONSE
+---
+timestamp: $TIMESTAMP
+from: claude
+to: gemini
+type: $TYPE
+task_id: ${TASK_ID:-none}
+---
+
+# Claude Response
+
+$MESSAGE
+
+EOFRESPONSE
+
+# Update status to indicate Gemini can continue
+cat > "$STATUS_FILE" << EOFSTATUS
+{
+  "state": "GEMINI_WORKING",
+  "updated": "$TIMESTAMP",
+  "current_task": "Process Claude's response",
+  "context": "$RESPONSE_FILE",
+  "last_response": "$TIMESTAMP"
+}
+EOFSTATUS
+
+echo "✓ Response sent to Gemini"
+echo "Response file: $RESPONSE_FILE"
+echo "Thread: $THREAD_FILE"
+echo "Status: GEMINI_WORKING"

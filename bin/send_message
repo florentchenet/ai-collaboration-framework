@@ -1,0 +1,98 @@
+#!/bin/bash
+# send_message - Tool for Gemini to send messages to Claude
+# Usage: send_message <recipient> <message> <type> <priority>
+
+set -e
+
+COLLAB_DIR="/Users/hoe/Dev/workspace/collab"
+DIALOGUES_DIR="$COLLAB_DIR/dialogues"
+LOG_FILE="$COLLAB_DIR/message-log.jsonl"
+STATUS_FILE="$COLLAB_DIR/status.json"
+
+# Parse arguments
+RECIPIENT="${1:-claude}"
+MESSAGE="$2"
+TYPE="${3:-info}"  # info, question, request
+PRIORITY="${4:-normal}"  # normal, high
+
+if [ -z "$MESSAGE" ]; then
+    echo "Usage: send_message <recipient> <message> <type> <priority>"
+    echo "Types: info, question, request"
+    echo "Priorities: normal, high"
+    exit 1
+fi
+
+# Create timestamp
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Create message object
+MESSAGE_OBJ=$(cat <<EOF
+{
+  "timestamp": "$TIMESTAMP",
+  "from": "gemini",
+  "to": "$RECIPIENT",
+  "type": "$TYPE",
+  "priority": "$PRIORITY",
+  "message": $(echo "$MESSAGE" | jq -R -s .)
+}
+EOF
+)
+
+# Append to log
+mkdir -p "$COLLAB_DIR"
+echo "$MESSAGE_OBJ" >> "$LOG_FILE"
+
+# Append to active thread
+THREAD_FILE="$DIALOGUES_DIR/active_thread.md"
+mkdir -p "$DIALOGUES_DIR"
+
+# Create or append to thread
+if [ ! -f "$THREAD_FILE" ]; then
+    cat > "$THREAD_FILE" << EOFTHREAD
+# Active Collaboration Thread
+
+**Started:** $TIMESTAMP
+
+---
+
+EOFTHREAD
+fi
+
+# Add message to thread with formatted header
+cat >> "$THREAD_FILE" << EOFMSG
+
+### 🔷 Gemini
+
+**[$TIMESTAMP]** → Claude | Type: $TYPE | Priority: $PRIORITY
+
+$MESSAGE
+
+---
+
+EOFMSG
+
+# Update status based on message type
+if [ "$TYPE" = "request" ] || [ "$TYPE" = "question" ]; then
+    # Update status to indicate Claude needs to respond
+    cat > "$STATUS_FILE" << EOFSTATUS
+{
+  "state": "CLAUDE_WORKING",
+  "updated": "$TIMESTAMP",
+  "current_task": "Respond to Gemini $TYPE",
+  "context": "$THREAD_FILE"
+}
+EOFSTATUS
+    echo "✓ Message sent to Claude (state: CLAUDE_WORKING)"
+else
+    echo "✓ Message logged (type: $TYPE, priority: $PRIORITY)"
+fi
+
+# If high priority, create a notification file
+if [ "$PRIORITY" = "high" ]; then
+    NOTIF_FILE="$COLLAB_DIR/.claude-notify"
+    echo "$TIMESTAMP: HIGH PRIORITY MESSAGE from Gemini" > "$NOTIF_FILE"
+    echo "⚠ High priority notification created"
+fi
+
+echo "Thread: $THREAD_FILE"
+echo "Log: $LOG_FILE"

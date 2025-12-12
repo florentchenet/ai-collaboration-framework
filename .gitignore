@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Logs
+*.log
+*.jsonl
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Local configuration
+.env
+.env.local
+
+# User-specific workspace data (don't commit personal collaboration logs)
+workspace/
+
+# MCP server cache
+.mcp/
